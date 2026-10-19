@@ -1,0 +1,1 @@
+export {PatientsScreen as default} from '../../src/features/patients/PatientsScreen';

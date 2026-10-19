@@ -1,0 +1,37 @@
+services:
+  db:
+    # HAPI database to store resources
+    # HAPI container runs an embedded H2 database inside the container’s own filesystem.
+    # That’s convenient for trying things out, but the data lives and dies with the container, which is why it vanished.
+    image: postgres:16
+    container_name: ohs-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Named Volume
+    volumes:
+      - ohs-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hapi:
+    image: hapiproject/hapi:latest
+    container_name: ohs-hapi
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgresDialect
+
+volumes:
+  ohs-pgdata:
