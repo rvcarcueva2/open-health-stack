@@ -1,3 +1,4 @@
+// Business logic & Data layer
 package com.example.openhealthstack.fhir;
 
 import ca.uhn.fhir.rest.api.MethodOutcome;
@@ -14,15 +15,15 @@ import java.util.Optional;
 public class PatientService {
 
     public static final String LOCAL_ID_SYSTEM = "urn:ohs:local-id";
-    private final IGenericClient fhir;
+    private final IGenericClient fhir; //  HAPI FHIR Client
 
     public PatientService(IGenericClient fhir) {
         this.fhir = fhir;
     }
 
-    public Bundle search(int count) {
+    public Bundle search(int count) { // Search function
         return fhir.search()
-                .forResource(Patient.class)
+                .forResource(Patient.class)  // Targets /Patient endpoint.
                 .count(count)
                 .returnBundle(Bundle.class)
                 .execute();

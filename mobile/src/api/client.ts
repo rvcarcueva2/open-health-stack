@@ -1,6 +1,9 @@
+// Custom network helper for src/features/{feature-name}/api
+// HTTP boundary is needed to support file uploads
+// An HTTP boundary is a unique text string used as a delimiter to separate different blocks of data inside a form data HTTP Request
 import {API_BASE_URL} from '../config';
 
-const REQUEST_TIMEOUT_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 10_000; // Time out if the server hangs for over 10 seconds.
 
 export class ApiError extends Error {
     constructor(public status: number, message: string) {
@@ -19,7 +22,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
             signal: controller.signal,
             headers: {
                 Accept: 'application/fhir+json',
-                ...(init.body ? {'Content-Type': 'application/fhir+json'} : {}),
+                ...(init.body ? {'Content-Type': 'application/fhir+json'} : {}), // Sends  a single text payload (structured JSON data).
                 ...init.headers,
             },
         });
@@ -36,5 +39,5 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
     get: <T>(path: string) => request<T>(path),
     post: <T>(path: string, body: unknown) =>
-        request<T>(path, {method: 'POST', body: JSON.stringify(body)}),
+        request<T>(path, {method: 'POST', body: JSON.stringify(body)}), // Turns the patient data into text
 };

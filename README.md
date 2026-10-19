@@ -46,7 +46,7 @@ Open Health Stack is split into a local-first mobile client, a Spring Boot API, 
   - `POST /api/patients` accepts and returns FHIR JSON and responds with `201 Created`.
 - `backend/src/main/java/com/example/openhealthstack/fhir/PatientService.java` is the application-to-FHIR boundary. It uses HAPI's `IGenericClient` for Patient search, read, and create operations. Creates with a local identifier use a conditional FHIR create, preventing duplicate server resources when a client retries an upload.
 - `backend/src/main/java/com/example/openhealthstack/config/FhirConfig.java` creates a singleton R4 `FhirContext` and configures the HAPI client from `fhir.base-url` (`http://localhost:8090/fhir` by default).
-- `backend/src/main/resources/application.yml` configures the Spring API port (`8080`) and HAPI FHIR base URL. `backend/docker-compose.yml` runs HAPI FHIR on port `8090` and PostgreSQL with a named volume for persistence.
+- `backend/src/main/resources/application.yml` configures the Spring API port (`8080`) and HAPI FHIR base URL. `docker-compose.yml` runs HAPI FHIR on port `8090` and PostgreSQL with a named volume for persistence.
 
 ### Data flow
 
@@ -59,29 +59,13 @@ The patient create and upload path works as follows:
 5. **Frontend passes the HTTP request** — `mobile/src/features/patients/api.ts` passes the pending FHIR resource to `api.post('/api/patients', row.resource)`. `mobile/src/api/client.ts` serializes it, passes it to `POST http://<API host>:8080/api/patients`, sets `Content-Type` and `Accept` to `application/fhir+json`, and aborts after 10 seconds. It parses the HTTP result as JSON; network failures return `ApiError(status = 0)`, while HTTP failures return an `ApiError` containing the response status.
 6. **Backend accepts and parses the request** — `backend/src/main/java/com/example/openhealthstack/api/PatientController.java` accepts the raw FHIR JSON request body at `POST /api/patients`. It passes the body to the HAPI JSON parser from `backend/src/main/java/com/example/openhealthstack/config/FhirConfig.java`, which parses and returns an R4 `Patient`; the controller then passes that Patient to `PatientService.create`.
 7. **Backend passes a conditional FHIR request** — `backend/src/main/java/com/example/openhealthstack/fhir/PatientService.java` passes the parsed Patient through HAPI's `IGenericClient` to the FHIR base URL configured in `backend/src/main/resources/application.yml`. When `urn:ohs:local-id` exists, it passes a conditional create query using that system and UUID, so HAPI creates a new Patient only when no matching identifier exists. If HAPI returns no matched resource, `PatientService` searches by the same identifier and returns the existing Patient.
-8. **FHIR server accepts and persists** — The HAPI FHIR server defined in `backend/docker-compose.yml` accepts the FHIR REST request on port `8090`, parses the resource, and persists it to PostgreSQL through the named `ohs-pgdata` volume.
+8. **FHIR server accepts and persists** — The HAPI FHIR server defined in `docker-compose.yml` accepts the FHIR REST request on port `8090`, parses the resource, and persists it to PostgreSQL through the named `ohs-pgdata` volume.
 9. **Backend parses and returns the response** — `PatientService` returns the saved or matched Patient to `PatientController`. The controller passes it to HAPI's JSON encoder, which returns FHIR JSON with HTTP `201 Created` to the mobile client.
 10. **Frontend parses and stores the returned Patient** — `mobile/src/api/client.ts` parses the response JSON and returns it to `syncPatients`. `markSynced` in `mobile/src/features/patients/local.ts` accepts the returned server `id`, passes the server resource into SQLite, changes `sync_status` to `synced`, clears `last_error`, and returns the updated state through React Query.
 11. **Frontend accepts failures for retry** — If the backend returns an error, `markFailed` in `mobile/src/features/patients/local.ts` accepts the error message and leaves the row pending. If the API cannot be reached, `mobile/src/sync/syncPatients.ts` stops the batch while preserving local data. If HAPI accepted a request but the response was lost, the next frontend retry passes the same UUID and the backend conditional create returns the existing Patient instead of creating a duplicate.
 
 The current mobile sync path is upload-focused: `mobile/src/sync/syncPatients.ts` currently processes pending local rows and does not yet perform a server pull before pushing. The local repository includes `upsertFromServer` in `mobile/src/features/patients/local.ts`, which provides the merge rules for a future pull phase: match by server ID first, then by the local identifier, and finally insert a new local row.
 
-### Integration and security direction
-
-The intended deployment model uses Spring Boot for business
-logic and FHIR operations, with OpenHIM as the gateway for
-inter-system traffic that needs centralized tracking.
-
-You don't necessarily need to route every internal
-Spring Boot request through OpenHIM.
-What matters is that the traffic you need to govern
-and audit actually passes through it.
-
-OpenHIM - Authenticates and controls access for external
-systems connecting through the interoperability gateway.
-
-Spring Security - Authenticates application users and enforces
-user-level permissions and access to healthcare data.
 
 ### Design decisions
 
@@ -94,3 +78,20 @@ user-level permissions and access to healthcare data.
 ### Tabs VS Stack
 - Tabs switch between top-level sections that are always available, like Patients, Sync status or Settings.
 - Stack moves you forward through a flow and back again, like the patient list leading to the Add patient form.
+
+### Integration and security direction
+
+- The intended deployment model uses Spring Boot for business
+logic and FHIR operations, with OpenHIM as the gateway for
+inter-system traffic that needs centralized tracking.
+
+- You don't necessarily need to route every internal
+Spring Boot request through OpenHIM.
+What matters is that the traffic you need to govern
+and audit actually passes through it.
+
+- OpenHIM - Authenticates and controls access for external
+systems connecting through the interoperability gateway.
+
+- Spring Security - Authenticates application users and enforces
+user-level permissions and access to healthcare data.

@@ -5,6 +5,7 @@ import ca.uhn.fhir.rest.client.api.IGenericClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import ca.uhn.fhir.rest.client.interceptor.BasicAuthInterceptor;
 
 @Configuration
 public class FhirConfig {
@@ -15,7 +16,13 @@ public class FhirConfig {
     }
 
     @Bean
-    IGenericClient fhirClient(FhirContext ctx, @Value("${fhir.base-url}") String baseUrl) {
-        return ctx.newRestfulGenericClient(baseUrl);
+    IGenericClient fhirClient(
+            FhirContext ctx,
+            @Value("${fhir.base-url}") String baseUrl,
+            @Value("${fhir.username}") String username,
+            @Value("${fhir.password}") String password) {
+        IGenericClient client = ctx.newRestfulGenericClient(baseUrl);
+        client.registerInterceptor(new BasicAuthInterceptor(username, password));
+        return client;
     }
 }

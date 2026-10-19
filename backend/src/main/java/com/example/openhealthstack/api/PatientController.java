@@ -1,3 +1,4 @@
+// Routes & Controller
 package com.example.openhealthstack.api;
 
 import ca.uhn.fhir.context.FhirContext;
@@ -25,7 +26,7 @@ public class PatientController {
 
     @GetMapping(produces = FHIR_JSON)
     public String list(@RequestParam(defaultValue = "20") int count) {
-        return json(service.search(Math.min(count, 100)));
+        return json(service.search(Math.min(count, 100))); // Use the search function from PatientService
     }
 
     @GetMapping(value = "/{id}", produces = FHIR_JSON)

@@ -6,4 +6,6 @@ server:
   port: 8080
 
 fhir:
-  base-url: http://localhost:8090/fhir
+  base-url: http://localhost:5001/fhir
+  username: ohs-mobile-api
+  password: ohs-mobile-2026
