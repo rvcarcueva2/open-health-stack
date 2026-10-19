@@ -1,6 +1,6 @@
 ## High-level architecture
 
-Open Health Stack is split into a local-first mobile client, a Spring Boot API, and a HAPI FHIR server:
+Open Health Stack is split into a local-first mobile client, a Spring Boot API, an OpenHIM interoperability gateway, and a HAPI FHIR server:
 
 ```text
 ┌──────────────────────────────┐
@@ -20,7 +20,14 @@ Open Health Stack is split into a local-first mobile client, a Spring Boot API, 
 │ PatientService               │
 │ HAPI FHIR client (R4)        │
 └──────────────┬───────────────┘
-               │ FHIR REST API
+               │ FHIR REST API via OpenHIM
+               ▼
+┌──────────────────────────────┐
+│ OpenHIM HTTP channel :5001   │
+│                              │
+│ Interoperability gateway     │
+└──────────────┬───────────────┘
+               │
                ▼
 ┌──────────────────────────────┐
 │ HAPI FHIR server :8090       │
@@ -47,6 +54,30 @@ Open Health Stack is split into a local-first mobile client, a Spring Boot API, 
 - `backend/src/main/java/com/example/openhealthstack/fhir/PatientService.java` is the application-to-FHIR boundary. It uses HAPI's `IGenericClient` for Patient search, read, and create operations. Creates with a local identifier use a conditional FHIR create, preventing duplicate server resources when a client retries an upload.
 - `backend/src/main/java/com/example/openhealthstack/config/FhirConfig.java` creates a singleton R4 `FhirContext` and configures the HAPI client from `fhir.base-url` (`http://localhost:8090/fhir` by default).
 - `backend/src/main/resources/application.yml` configures the Spring API port (`8080`) and HAPI FHIR base URL. `docker-compose.yml` runs HAPI FHIR on port `8090` and PostgreSQL with a named volume for persistence.
+- The configured FHIR base URL is `http://localhost:5001/fhir`, so backend FHIR traffic uses the OpenHIM HTTP channel. HAPI FHIR remains directly available at `http://localhost:8090/fhir` for local administration and troubleshooting.
+
+### Local infrastructure
+
+The root `docker-compose.yml` starts PostgreSQL, HAPI FHIR, OpenHIM Core, and the OpenHIM administration console:
+
+```bash
+docker compose up -d
+```
+
+The services are exposed on these local ports:
+
+- **Spring Boot API** — `http://localhost:8080` — application API used by the mobile client.
+- **HAPI FHIR** — `http://localhost:8090/fhir` — FHIR server and PostgreSQL-backed persistence.
+- **OpenHIM Core API** — `http://localhost:8081` — OpenHIM management API.
+- **OpenHIM HTTP channels** — `http://localhost:5001` — FHIR traffic from the backend.
+- **OpenHIM HTTPS channels** — `https://localhost:5000` — TLS-enabled OpenHIM channel.
+- **OpenHIM console** — `http://localhost:9000` — OpenHIM administration UI.
+
+OpenHIM uses MongoDB for its configuration and audit data, persisted in the `ohs-openhim-mongo` named volume. HAPI FHIR uses PostgreSQL, persisted in the `ohs-pgdata` named volume. The PostgreSQL connection values are read from the root `.env` file; set `POSTGRES_PASSWORD` before starting the stack if it is not already defined.
+
+The development OpenHIM console credentials are documented in [`infra/openhim/README.md`](infra/openhim/README.md). The console is bound to loopback (`127.0.0.1`) by Docker Compose and should not be exposed publicly without changing the deployment configuration and credentials.
+
+After starting the stack, configure or verify the OpenHIM channel that forwards `/fhir` traffic to HAPI FHIR at `http://hapi:8080/fhir`. The application is intentionally configured to send FHIR requests through OpenHIM rather than directly to HAPI.
 
 ### Data flow
 
@@ -59,10 +90,11 @@ The patient create and upload path works as follows:
 5. **Frontend passes the HTTP request** — `mobile/src/features/patients/api.ts` passes the pending FHIR resource to `api.post('/api/patients', row.resource)`. `mobile/src/api/client.ts` serializes it, passes it to `POST http://<API host>:8080/api/patients`, sets `Content-Type` and `Accept` to `application/fhir+json`, and aborts after 10 seconds. It parses the HTTP result as JSON; network failures return `ApiError(status = 0)`, while HTTP failures return an `ApiError` containing the response status.
 6. **Backend accepts and parses the request** — `backend/src/main/java/com/example/openhealthstack/api/PatientController.java` accepts the raw FHIR JSON request body at `POST /api/patients`. It passes the body to the HAPI JSON parser from `backend/src/main/java/com/example/openhealthstack/config/FhirConfig.java`, which parses and returns an R4 `Patient`; the controller then passes that Patient to `PatientService.create`.
 7. **Backend passes a conditional FHIR request** — `backend/src/main/java/com/example/openhealthstack/fhir/PatientService.java` passes the parsed Patient through HAPI's `IGenericClient` to the FHIR base URL configured in `backend/src/main/resources/application.yml`. When `urn:ohs:local-id` exists, it passes a conditional create query using that system and UUID, so HAPI creates a new Patient only when no matching identifier exists. If HAPI returns no matched resource, `PatientService` searches by the same identifier and returns the existing Patient.
-8. **FHIR server accepts and persists** — The HAPI FHIR server defined in `docker-compose.yml` accepts the FHIR REST request on port `8090`, parses the resource, and persists it to PostgreSQL through the named `ohs-pgdata` volume.
-9. **Backend parses and returns the response** — `PatientService` returns the saved or matched Patient to `PatientController`. The controller passes it to HAPI's JSON encoder, which returns FHIR JSON with HTTP `201 Created` to the mobile client.
-10. **Frontend parses and stores the returned Patient** — `mobile/src/api/client.ts` parses the response JSON and returns it to `syncPatients`. `markSynced` in `mobile/src/features/patients/local.ts` accepts the returned server `id`, passes the server resource into SQLite, changes `sync_status` to `synced`, clears `last_error`, and returns the updated state through React Query.
-11. **Frontend accepts failures for retry** — If the backend returns an error, `markFailed` in `mobile/src/features/patients/local.ts` accepts the error message and leaves the row pending. If the API cannot be reached, `mobile/src/sync/syncPatients.ts` stops the batch while preserving local data. If HAPI accepted a request but the response was lost, the next frontend retry passes the same UUID and the backend conditional create returns the existing Patient instead of creating a duplicate.
+8. **OpenHIM forwards the FHIR request** — The backend sends the request to the OpenHIM HTTP channel on port `5001`. OpenHIM applies the configured interoperability and audit controls, then forwards the request to the HAPI FHIR server.
+9. **FHIR server accepts and persists** — The HAPI FHIR server defined in `docker-compose.yml` parses the forwarded resource and persists it to PostgreSQL through the named `ohs-pgdata` volume.
+10. **Backend parses and returns the response** — `PatientService` returns the saved or matched Patient to `PatientController`. The controller passes it to HAPI's JSON encoder, which returns FHIR JSON with HTTP `201 Created` to the mobile client.
+11. **Frontend parses and stores the returned Patient** — `mobile/src/api/client.ts` parses the response JSON and returns it to `syncPatients`. `markSynced` in `mobile/src/features/patients/local.ts` accepts the returned server `id`, passes the server resource into SQLite, changes `sync_status` to `synced`, clears `last_error`, and returns the updated state through React Query.
+12. **Frontend accepts failures for retry** — If the backend returns an error, `markFailed` in `mobile/src/features/patients/local.ts` accepts the error message and leaves the row pending. If the API cannot be reached, `mobile/src/sync/syncPatients.ts` stops the batch while preserving local data. If HAPI accepted a request but the response was lost, the next frontend retry passes the same UUID and the backend conditional create returns the existing Patient instead of creating a duplicate.
 
 The current mobile sync path is upload-focused: `mobile/src/sync/syncPatients.ts` currently processes pending local rows and does not yet perform a server pull before pushing. The local repository includes `upsertFromServer` in `mobile/src/features/patients/local.ts`, which provides the merge rules for a future pull phase: match by server ID first, then by the local identifier, and finally insert a new local row.
 
