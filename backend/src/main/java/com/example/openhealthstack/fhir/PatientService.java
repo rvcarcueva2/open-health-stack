@@ -1,4 +1,4 @@
-// Business logic & Data layer
+// Business logic & Data layer (FHIR operations)
 package com.example.openhealthstack.fhir;
 
 import ca.uhn.fhir.rest.api.MethodOutcome;
