@@ -15,13 +15,13 @@ import java.util.Optional;
 public class PatientService {
 
     public static final String LOCAL_ID_SYSTEM = "urn:ohs:local-id";
-    private final IGenericClient fhir; //  HAPI FHIR Client
+    private final IGenericClient fhir; //  HAPI FHIR Client, used IGenericClient object from FhirConfig
 
     public PatientService(IGenericClient fhir) {
         this.fhir = fhir;
     }
 
-    public Bundle search(int count) { // Search function
+    public Bundle search(int count) { // search() Search parameters GET /fhir/Patient?count=
         return fhir.search()
                 .forResource(Patient.class)  // Targets /Patient endpoint.
                 .count(count)
@@ -30,7 +30,7 @@ public class PatientService {
     }
 
 
-    public Patient read(String id) {
+    public Patient read(String id) { // read() Explicit parameters GET /fhir/Patient/{id}
         return fhir.read().resource(Patient.class).withId(id).execute();
     }
 
