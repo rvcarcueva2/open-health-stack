@@ -6,6 +6,7 @@ server:
   port: 8080
 
 fhir:
+  #  OpenHIM HTTP channel
   base-url: http://localhost:5001/fhir
   username: ohs-mobile-api
   password: ohs-mobile-2026
