@@ -5,6 +5,8 @@ services:
     # That’s convenient for trying things out, but the data lives and dies with the container, which is why it vanished.
     image: postgres:16
     container_name: ohs-db
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -42,29 +44,29 @@ services:
       - ohs-openhim-mongo:/data/db
 
   openhim-core:
-      image: jembi/openhim-core:latest
-      container_name: ohs-openhim-core
-      restart: unless-stopped
-      depends_on:
-        - openhim-mongo
-      environment:
-        mongo_url: mongodb://openhim-mongo/openhim
-        mongo_atnaUrl: mongodb://openhim-mongo/openhim
-      ports:
-        - "127.0.0.1:8081:8080"   # core API (moved off 8080)
-        - "127.0.0.1:5000:5000"   # HTTPS channels
-        - "127.0.0.1:5001:5001"   # HTTP channels
+    image: jembi/openhim-core:latest
+    container_name: ohs-openhim-core
+    restart: unless-stopped
+    depends_on:
+      - openhim-mongo
+    environment:
+      mongo_url: mongodb://openhim-mongo/openhim
+      mongo_atnaUrl: mongodb://openhim-mongo/openhim
+    ports:
+      - "127.0.0.1:8081:8080"   # core API (moved off 8080)
+      - "127.0.0.1:5000:5000"   # HTTPS channels
+      - "127.0.0.1:5001:5001"   # HTTP channels
 
   openhim-console:
-      image: jembi/openhim-console:latest
-      container_name: ohs-openhim-console
-      restart: unless-stopped
-      depends_on:
-        - openhim-core
-      ports:
-        - "127.0.0.1:9000:80"
-      volumes:
-        - ./infra/openhim/console-default.json:/usr/share/nginx/html/config/default.json:ro
+    image: jembi/openhim-console:latest
+    container_name: ohs-openhim-console
+    restart: unless-stopped
+    depends_on:
+      - openhim-core
+    ports:
+      - "127.0.0.1:9000:80"
+    volumes:
+      - ./infra/openhim/console-default.json:/usr/share/nginx/html/config/default.json:ro
 
 
 volumes:
